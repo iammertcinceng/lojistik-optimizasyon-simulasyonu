@@ -110,11 +110,26 @@ def solve_logistics(req: OptRequest):
                         "cust_y": int(customers.iloc[j]['y'])
                     })
 
+    # Maliyet kırılımı hesapla
+    total_fixed_cost = sum(fixed_dict[i] for i in opened_indices)
+    total_transport_cost = sum(
+        transport_cost[(i, j)] 
+        for i in model.I 
+        for j in model.J 
+        if value(model.x[i, j]) > 0.5
+    )
+
     return {
         "status": "Optimal",
         "total_cost": value(model.Obj),
+        "total_fixed_cost": total_fixed_cost,  # Toplam kira maliyeti
+        "total_transport_cost": total_transport_cost,  # Toplam nakliye maliyeti
         "opened_count": len(opened_indices),
         "facility_report": facility_report, # Tüm tesisler burada
         "assignments": assignments,
-        "all_customers": customers.to_dict(orient="records")
+        "all_customers": customers.to_dict(orient="records"),
+        "params": {
+            "fuel_price": req.fuel_price,
+            "trip_frequency": req.trip_frequency
+        }
     }

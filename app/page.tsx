@@ -1,9 +1,16 @@
 "use client";
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 
 export default function Home() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<any>(null);
+
+  // Zoom ve pan state'leri
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const mapRef = useRef<HTMLDivElement>(null);
 
   const [params, setParams] = useState({
     n_facilities: 10,
@@ -14,9 +21,10 @@ export default function Home() {
 
   const handleSolve = async () => {
     setLoading(true);
+    // Reset zoom/pan on new solve
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
     try {
-      // LOCALDE TEST EDERKEN BURAYI: "http://127.0.0.1:8000/api/solve" YAP
-      // VERCEL'DE: "/api/solve" OLARAK KALSIN
       const apiUrl = process.env.NODE_ENV === 'development'
         ? "http://127.0.0.1:8000/api/solve"
         : "/api/solve";
@@ -31,11 +39,43 @@ export default function Home() {
       const data = await res.json();
       setResult(data);
     } catch (error) {
-      alert("Hata: Backend çalışmıyor olabilir. Localde 'uvicorn' çalıştırdın mı?");
+      alert("Hata: Backend çalışmıyor olabilir.");
     } finally {
       setLoading(false);
     }
   };
+
+  // Zoom kontrolleri
+  const handleZoomIn = () => setZoom((z) => Math.min(z * 1.3, 5));
+  const handleZoomOut = () => setZoom((z) => Math.max(z / 1.3, 0.5));
+  const handleResetView = () => {
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+  };
+
+  // Mouse wheel zoom
+  const handleWheel = (e: React.WheelEvent) => {
+    e.preventDefault();
+    const delta = e.deltaY > 0 ? 0.9 : 1.1;
+    setZoom((z) => Math.min(Math.max(z * delta, 0.5), 5));
+  };
+
+  // Pan (sürükleme) kontrolleri
+  const handleMouseDown = (e: React.MouseEvent) => {
+    setIsDragging(true);
+    setDragStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!isDragging) return;
+    setPan({
+      x: e.clientX - dragStart.x,
+      y: e.clientY - dragStart.y,
+    });
+  };
+
+  const handleMouseUp = () => setIsDragging(false);
+  const handleMouseLeave = () => setIsDragging(false);
 
   return (
     <div className="min-h-screen bg-gray-50 p-6 font-sans text-gray-800">
@@ -62,64 +102,125 @@ export default function Home() {
                 value={params.n_customers} onChange={(e) => setParams({ ...params, n_customers: Number(e.target.value) })} />
             </div>
             <div>
-              <label className="block font-medium text-gray-600 mb-1">Yakıt (TL/km)</label>
+              <label className="block font-medium text-gray-600 mb-1">Kilometre Başına Gider (TL)</label>
               <input type="number" min="1" max="100" className="w-full border p-2 rounded focus:ring-2 focus:ring-indigo-500 outline-none"
                 value={params.fuel_price} onChange={(e) => setParams({ ...params, fuel_price: Number(e.target.value) })} />
             </div>
             <div>
-              <label className="block font-medium text-gray-600 mb-1">Aylık Sefer (1-30)</label>
+              <label className="block font-medium text-gray-600 mb-1">Aylık Sefer Sayısı (1-30)</label>
               <input type="number" min="1" max="30" className="w-full border p-2 rounded focus:ring-2 focus:ring-indigo-500 outline-none"
                 value={params.trip_frequency} onChange={(e) => setParams({ ...params, trip_frequency: Number(e.target.value) })} />
             </div>
 
-            <button
-              onClick={handleSolve}
-              disabled={loading}
-              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-lg transition-all shadow-md disabled:opacity-50"
-            >
-              {loading ? "Hesaplanıyor..." : "SİMÜLASYONU BAŞLAT"}
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={handleSolve}
+                disabled={loading}
+                className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-lg transition-all shadow-md disabled:opacity-50"
+              >
+                {loading ? "Hesaplanıyor..." : "SİMÜLASYONU BAŞLAT"}
+              </button>
+              <button
+                onClick={() => setParams({
+                  n_facilities: 10,
+                  n_customers: 60,
+                  fuel_price: 25.0,
+                  trip_frequency: 20,
+                })}
+                className="w-12 h-12 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg transition-all shadow-md flex items-center justify-center"
+                title="Varsayılan Değerlere Dön"
+              >
+                ↺
+              </button>
+            </div>
           </div>
         </div>
 
         {/* ORTA PANEL: HARİTA (6 Sütun Genişlik) */}
         <div className="lg:col-span-6 bg-white p-2 rounded-xl shadow-sm border border-gray-200 flex flex-col">
-          <div className="flex-1 bg-slate-50 rounded-lg relative min-h-[500px] border border-dashed border-gray-300">
+          {/* Harita Kontrolleri */}
+          <div className="flex items-center justify-between px-2 py-1 bg-gray-50 rounded-t-lg border-b border-gray-200">
+            <span className="text-xs text-gray-500">Zoom: {Math.round(zoom * 100)}%</span>
+            <div className="flex gap-1">
+              <button
+                onClick={handleZoomIn}
+                className="px-2 py-1 bg-indigo-100 hover:bg-indigo-200 text-indigo-700 rounded text-sm font-medium transition-colors"
+                title="Yakınlaştır"
+              >
+                ➕
+              </button>
+              <button
+                onClick={handleZoomOut}
+                className="px-2 py-1 bg-indigo-100 hover:bg-indigo-200 text-indigo-700 rounded text-sm font-medium transition-colors"
+                title="Uzaklaştır"
+              >
+                ➖
+              </button>
+              <button
+                onClick={handleResetView}
+                className="px-2 py-1 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded text-sm font-medium transition-colors"
+                title="Sıfırla"
+              >
+                ↺
+              </button>
+            </div>
+          </div>
+
+          <div
+            ref={mapRef}
+            className="flex-1 bg-slate-50 rounded-b-lg relative min-h-[500px] border border-dashed border-gray-300 overflow-hidden cursor-grab active:cursor-grabbing"
+            onWheel={handleWheel}
+            onMouseDown={handleMouseDown}
+            onMouseMove={handleMouseMove}
+            onMouseUp={handleMouseUp}
+            onMouseLeave={handleMouseLeave}
+          >
             {!result ? (
               <div className="absolute inset-0 flex items-center justify-center text-gray-400">
                 Harita verisi bekleniyor...
               </div>
             ) : (
-              <svg viewBox="0 0 100 100" className="w-full h-full">
-                {/* Müşteriler */}
-                {result.all_customers.map((c: any, i: number) => (
-                  <circle key={`c-${i}`} cx={c.x} cy={c.y} r="1.5" fill="#93c5fd" />
-                ))}
+              <div
+                style={{
+                  transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+                  transformOrigin: 'center center',
+                  transition: isDragging ? 'none' : 'transform 0.1s ease-out',
+                  width: '100%',
+                  height: '100%',
+                }}
+              >
+                <svg viewBox="0 0 100 100" className="w-full h-full">
+                  {/* Müşteriler */}
+                  {result.all_customers.map((c: any, i: number) => (
+                    <circle key={`c-${i}`} cx={c.x} cy={c.y} r="1.5" fill="#93c5fd" />
+                  ))}
 
-                {/* Bağlantılar */}
-                {result.assignments.map((a: any, i: number) => {
-                  const fac = result.facility_report.find((f: any) => f.id === a.facility_id);
-                  const color = ['#f59e0b', '#8b5cf6', '#10b981', '#ec4899', '#3b82f6'][a.facility_id % 5];
-                  return <line key={`l-${i}`} x1={fac.x} y1={fac.y} x2={a.cust_x} y2={a.cust_y} stroke={color} strokeWidth="0.3" opacity="0.4" />
-                })}
+                  {/* Bağlantılar */}
+                  {result.assignments.map((a: any, i: number) => {
+                    const fac = result.facility_report.find((f: any) => f.id === a.facility_id);
+                    const color = ['#f59e0b', '#8b5cf6', '#10b981', '#ec4899', '#3b82f6'][a.facility_id % 5];
+                    return <line key={`l-${i}`} x1={fac.x} y1={fac.y} x2={a.cust_x} y2={a.cust_y} stroke={color} strokeWidth="0.3" opacity="0.4" />
+                  })}
 
-                {/* Tesisler (Hepsi) */}
-                {result.facility_report.map((f: any) => {
-                  const isOpen = f.status === "ACTIVE";
-                  const color = isOpen ? ['#f59e0b', '#8b5cf6', '#10b981', '#ec4899', '#3b82f6'][f.id % 5] : '#fee2e2';
-                  const stroke = isOpen ? 'white' : '#ef4444';
+                  {/* Tesisler (Hepsi) */}
+                  {result.facility_report.map((f: any) => {
+                    const isOpen = f.status === "ACTIVE";
+                    const color = isOpen ? ['#f59e0b', '#8b5cf6', '#10b981', '#ec4899', '#3b82f6'][f.id % 5] : '#fee2e2';
+                    const stroke = isOpen ? 'white' : '#ef4444';
 
-                  return (
-                    <g key={`f-${f.id}`}>
-                      <rect x={f.x - 3} y={f.y - 3} width="6" height="6" fill={color} stroke={stroke} strokeWidth="0.5" rx="1" />
-                      {!isOpen && <text x={f.x} y={f.y} textAnchor="middle" dy=".3em" fontSize="3" fill="#ef4444" style={{ pointerEvents: 'none' }}>x</text>}
-                      {isOpen && <text x={f.x} y={f.y} textAnchor="middle" dy=".3em" fontSize="2.5" fill="white" fontWeight="bold">{f.id}</text>}
-                    </g>
-                  )
-                })}
-              </svg>
+                    return (
+                      <g key={`f-${f.id}`}>
+                        <rect x={f.x - 3} y={f.y - 3} width="6" height="6" fill={color} stroke={stroke} strokeWidth="0.5" rx="1" />
+                        {!isOpen && <text x={f.x} y={f.y} textAnchor="middle" dy=".3em" fontSize="3" fill="#ef4444" style={{ pointerEvents: 'none' }}>x</text>}
+                        {isOpen && <text x={f.x} y={f.y} textAnchor="middle" dy=".3em" fontSize="2.5" fill="white" fontWeight="bold">{f.id}</text>}
+                      </g>
+                    )
+                  })}
+                </svg>
+              </div>
             )}
-            <div className="absolute bottom-2 right-2 text-[10px] text-gray-400">100x100 Koordinat Düzlemi</div>
+            <div className="absolute bottom-2 right-2 text-[10px] text-gray-400 bg-white/80 px-1 rounded">100x100 Koordinat Düzlemi</div>
+            <div className="absolute bottom-2 left-2 text-[10px] text-gray-400 bg-white/80 px-1 rounded">🖱️ Scroll: Zoom | Sürükle: Kaydır</div>
           </div>
         </div>
 
@@ -129,6 +230,7 @@ export default function Home() {
 
           {result ? (
             <div className="space-y-4">
+              {/* Toplam Maliyet */}
               <div className="bg-green-50 p-3 rounded border border-green-100">
                 <p className="text-xs text-green-600 font-bold uppercase">Toplam Maliyet</p>
                 <p className="text-2xl font-bold text-green-800">
@@ -137,6 +239,47 @@ export default function Home() {
                 <p className="text-xs mt-1 text-green-700">
                   {result.opened_count} Tesis Aktif
                 </p>
+              </div>
+
+              {/* Maliyet Kırılımı */}
+              <div className="bg-blue-50 p-3 rounded border border-blue-100">
+                <p className="text-xs text-blue-600 font-bold uppercase mb-2">📊 Maliyet Kırılımı</p>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between items-center">
+                    <span className="text-blue-700 flex items-center gap-1">
+                      <span className="text-base">🏠</span> Tesis Kiraları
+                    </span>
+                    <span className="font-semibold text-blue-800">
+                      {(result.total_fixed_cost || 0).toLocaleString('tr-TR', { style: 'currency', currency: 'TRY', maximumFractionDigits: 0 })}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-blue-700 flex items-center gap-1">
+                      <span className="text-base">🚚</span> Nakliye Gideri
+                    </span>
+                    <span className="font-semibold text-blue-800">
+                      {(result.total_transport_cost || 0).toLocaleString('tr-TR', { style: 'currency', currency: 'TRY', maximumFractionDigits: 0 })}
+                    </span>
+                  </div>
+                  <div className="border-t border-blue-200 pt-2 mt-2">
+                    <div className="flex justify-between text-xs text-blue-600">
+                      <span>Kira Oranı</span>
+                      <span>{result.total_cost > 0 ? Math.round((result.total_fixed_cost / result.total_cost) * 100) : 0}%</span>
+                    </div>
+                    <div className="w-full bg-blue-200 rounded-full h-2 mt-1">
+                      <div
+                        className="bg-indigo-500 h-2 rounded-full transition-all"
+                        style={{ width: `${result.total_cost > 0 ? (result.total_fixed_cost / result.total_cost) * 100 : 0}%` }}
+                      ></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Detay Bilgi */}
+              <div className="text-xs text-gray-500 bg-gray-50 p-2 rounded border border-gray-100">
+                <p>💡 <strong>Formül:</strong></p>
+                <p className="mt-1">Nakliye = Mesafe × {params.fuel_price} TL/km × {params.trip_frequency} sefer/ay</p>
               </div>
 
               <div>
