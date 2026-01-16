@@ -95,7 +95,7 @@ def solve_logistics(req: OptRequest):
             "y": int(fac['y']),
             "fixed_cost": int(fac['fixed_cost']),
             "capacity": int(fac['capacity']),
-            "status": "ACTIVE" if is_open else "CLOSED"
+            "status": "AÇILDI" if is_open else "KAPALI"
         })
 
     assignments = []

@@ -179,46 +179,74 @@ export default function Home() {
               <div className="absolute inset-0 flex items-center justify-center text-gray-400">
                 Harita verisi bekleniyor...
               </div>
-            ) : (
-              <div
-                style={{
-                  transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
-                  transformOrigin: 'center center',
-                  transition: isDragging ? 'none' : 'transform 0.1s ease-out',
-                  width: '100%',
-                  height: '100%',
-                }}
-              >
-                <svg viewBox="0 0 100 100" className="w-full h-full">
-                  {/* Müşteriler */}
-                  {result.all_customers.map((c: any, i: number) => (
-                    <circle key={`c-${i}`} cx={c.x} cy={c.y} r="1.5" fill="#93c5fd" />
-                  ))}
+            ) : (() => {
+              // Dinamik viewBox hesaplama - verilere tam oturacak şekilde
+              const allX = [
+                ...result.all_customers.map((c: any) => c.x),
+                ...result.facility_report.map((f: any) => f.x)
+              ];
+              const allY = [
+                ...result.all_customers.map((c: any) => c.y),
+                ...result.facility_report.map((f: any) => f.y)
+              ];
 
-                  {/* Bağlantılar */}
-                  {result.assignments.map((a: any, i: number) => {
-                    const fac = result.facility_report.find((f: any) => f.id === a.facility_id);
-                    const color = ['#f59e0b', '#8b5cf6', '#10b981', '#ec4899', '#3b82f6'][a.facility_id % 5];
-                    return <line key={`l-${i}`} x1={fac.x} y1={fac.y} x2={a.cust_x} y2={a.cust_y} stroke={color} strokeWidth="0.3" opacity="0.4" />
-                  })}
+              const minX = Math.min(...allX);
+              const maxX = Math.max(...allX);
+              const minY = Math.min(...allY);
+              const maxY = Math.max(...allY);
 
-                  {/* Tesisler (Hepsi) */}
-                  {result.facility_report.map((f: any) => {
-                    const isOpen = f.status === "ACTIVE";
-                    const color = isOpen ? ['#f59e0b', '#8b5cf6', '#10b981', '#ec4899', '#3b82f6'][f.id % 5] : '#fee2e2';
-                    const stroke = isOpen ? 'white' : '#ef4444';
+              // Padding ekle (kenarlardan biraz boşluk)
+              const padding = 8;
+              const viewWidth = (maxX - minX) + padding * 2;
+              const viewHeight = (maxY - minY) + padding * 2;
 
-                    return (
-                      <g key={`f-${f.id}`}>
-                        <rect x={f.x - 3} y={f.y - 3} width="6" height="6" fill={color} stroke={stroke} strokeWidth="0.5" rx="1" />
-                        {!isOpen && <text x={f.x} y={f.y} textAnchor="middle" dy=".3em" fontSize="3" fill="#ef4444" style={{ pointerEvents: 'none' }}>x</text>}
-                        {isOpen && <text x={f.x} y={f.y} textAnchor="middle" dy=".3em" fontSize="2.5" fill="white" fontWeight="bold">{f.id}</text>}
-                      </g>
-                    )
-                  })}
-                </svg>
-              </div>
-            )}
+              // Kare viewBox için en büyük boyutu kullan
+              const viewSize = Math.max(viewWidth, viewHeight);
+              const centerX = (minX + maxX) / 2;
+              const centerY = (minY + maxY) / 2;
+              const finalViewBox = `${centerX - viewSize / 2} ${centerY - viewSize / 2} ${viewSize} ${viewSize}`;
+
+              return (
+                <div
+                  style={{
+                    transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+                    transformOrigin: 'center center',
+                    transition: isDragging ? 'none' : 'transform 0.1s ease-out',
+                    width: '100%',
+                    height: '100%',
+                  }}
+                >
+                  <svg viewBox={finalViewBox} className="w-full h-full" preserveAspectRatio="xMidYMid meet">
+                    {/* Müşteriler */}
+                    {result.all_customers.map((c: any, i: number) => (
+                      <circle key={`c-${i}`} cx={c.x} cy={c.y} r="1.2" fill="#93c5fd" />
+                    ))}
+
+                    {/* Bağlantılar */}
+                    {result.assignments.map((a: any, i: number) => {
+                      const fac = result.facility_report.find((f: any) => f.id === a.facility_id);
+                      const color = ['#f59e0b', '#8b5cf6', '#10b981', '#ec4899', '#3b82f6'][a.facility_id % 5];
+                      return <line key={`l-${i}`} x1={fac.x} y1={fac.y} x2={a.cust_x} y2={a.cust_y} stroke={color} strokeWidth="0.25" opacity="0.5" />
+                    })}
+
+                    {/* Tesisler (Hepsi) */}
+                    {result.facility_report.map((f: any) => {
+                      const isOpen = f.status === "AÇILDI";
+                      const color = isOpen ? ['#f59e0b', '#8b5cf6', '#10b981', '#ec4899', '#3b82f6'][f.id % 5] : '#fee2e2';
+                      const stroke = isOpen ? 'white' : '#ef4444';
+
+                      return (
+                        <g key={`f-${f.id}`}>
+                          <rect x={f.x - 2.5} y={f.y - 2.5} width="5" height="5" fill={color} stroke={stroke} strokeWidth="0.4" rx="0.8" />
+                          {!isOpen && <text x={f.x} y={f.y} textAnchor="middle" dy=".35em" fontSize="2.5" fill="#ef4444" style={{ pointerEvents: 'none' }}>x</text>}
+                          {isOpen && <text x={f.x} y={f.y} textAnchor="middle" dy=".35em" fontSize="2" fill="white" fontWeight="bold">{f.id}</text>}
+                        </g>
+                      )
+                    })}
+                  </svg>
+                </div>
+              );
+            })()}
             <div className="absolute bottom-2 right-2 text-[10px] text-gray-400 bg-white/80 px-1 rounded">100x100 Koordinat Düzlemi</div>
             <div className="absolute bottom-2 left-2 text-[10px] text-gray-400 bg-white/80 px-1 rounded">🖱️ Scroll: Zoom | Sürükle: Kaydır</div>
           </div>
@@ -286,12 +314,12 @@ export default function Home() {
                 <h3 className="text-sm font-bold text-gray-700 mb-2">Tesis Detayları</h3>
                 <div className="space-y-2">
                   {result.facility_report.map((f: any) => (
-                    <div key={f.id} className={`text-xs p-2 rounded border flex justify-between items-center ${f.status === 'ACTIVE' ? 'bg-white border-indigo-200 shadow-sm' : 'bg-gray-50 border-gray-100 opacity-60'}`}>
+                    <div key={f.id} className={`text-xs p-2 rounded border flex justify-between items-center ${f.status === 'AÇILDI' ? 'bg-white border-indigo-200 shadow-sm' : 'bg-gray-50 border-gray-100 opacity-60'}`}>
                       <div>
-                        <span className={`font-bold mr-2 ${f.status === 'ACTIVE' ? 'text-indigo-600' : 'text-gray-500'}`}>Tesis {f.id}</span>
+                        <span className={`font-bold mr-2 ${f.status === 'AÇILDI' ? 'text-indigo-600' : 'text-gray-500'}`}>Tesis {f.id}</span>
                         <span className="text-gray-500 block">{f.fixed_cost.toLocaleString()} TL Kira</span>
                       </div>
-                      <span className={`px-2 py-1 rounded-full font-bold ${f.status === 'ACTIVE' ? 'bg-green-100 text-green-700' : 'bg-red-50 text-red-500'}`}>
+                      <span className={`px-2 py-1 rounded-full font-bold ${f.status === 'AÇILDI' ? 'bg-green-100 text-green-700' : 'bg-red-50 text-red-500'}`}>
                         {f.status}
                       </span>
                     </div>
